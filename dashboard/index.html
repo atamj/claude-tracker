@@ -707,6 +707,27 @@
   function renderWaiting(list) {
     const wrap = document.getElementById('waiting-list');
     const sec = document.getElementById('waiting-section');
+
+    // Snapshot des valeurs de saisie + focus avant re-render (sinon SSE efface ce qu'on tape)
+    const savedInputs = {};
+    let focusedSession = null;
+    let cursorStart = 0, cursorEnd = 0;
+    const openAccordions = new Set();
+    wrap.querySelectorAll('.wait-card').forEach(card => {
+      const sid = card.dataset.session;
+      const input = card.querySelector('form[data-form] input');
+      if (input) {
+        savedInputs[sid] = input.value;
+        if (document.activeElement === input) {
+          focusedSession = sid;
+          cursorStart = input.selectionStart || 0;
+          cursorEnd = input.selectionEnd || 0;
+        }
+      }
+      const acc = card.querySelector('details.term-accordion');
+      if (acc && acc.open) openAccordions.add(sid);
+    });
+
     if (list.length === 0) {
       wrap.innerHTML = '';
       sec.style.display = 'none';
@@ -811,6 +832,21 @@
           }
         }
       });
+    });
+
+    // Restaure les valeurs/focus/accordéons après le re-render
+    wrap.querySelectorAll('.wait-card').forEach(card => {
+      const sid = card.dataset.session;
+      const input = card.querySelector('form[data-form] input');
+      if (input && savedInputs[sid] !== undefined) input.value = savedInputs[sid];
+      const acc = card.querySelector('details.term-accordion');
+      if (acc && openAccordions.has(sid)) {
+        acc.open = true;
+      }
+      if (focusedSession === sid && input) {
+        input.focus();
+        try { input.setSelectionRange(cursorStart, cursorEnd); } catch (e) {}
+      }
     });
   }
 
