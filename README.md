@@ -74,6 +74,7 @@ Les Web Push exigent **HTTPS** : sans Tailscale (ou autre tunnel TLS), le bouton
 
 - **Wayland** : impossible de focuser une fenêtre tierce depuis le dashboard (sécurité du compositor). Le clic notif desktop ouvre le dashboard, pas le terminal en question.
 - **Forks de conversation** : si tu envoies un texte libre via le dashboard pendant que Claude Code est dans une transition (auto-compaction, par exemple), le message peut atterrir dans une branche alternative de la conversation. Les boutons 1/2/3 (permission) ne sont pas affectés. Le modal détecte et signale les branches alt.
+- **Reprise automatique des sessions ended** : pas fiable. Le bouton "Continuer" (✎) ne s'affiche que pour les sessions encore vivantes (status `idle`). Pour reprendre une session terminée, attache-toi manuellement à `claude --resume <session_id>` dans un terminal.
 - **iOS** : les Web Push fonctionnent **uniquement** si la PWA est installée sur l'écran d'accueil (limitation Apple). Pas testé.
 - **HTTPS requis** pour Web Push : sans tunnel TLS, le bouton 🔕 ne marche pas.
 

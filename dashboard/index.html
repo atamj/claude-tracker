@@ -893,7 +893,9 @@
       const title = projectTitle(s);
       const subtitle = rowSubtitle(s);
       const canDelete = (statusKey === 'ended' || statusKey === 'idle');
-      const canContinue = (statusKey === 'ended' || statusKey === 'idle');
+      // Continuer ne marche que sur les sessions encore vivantes (mode 'live' tmux send-keys).
+      // La reprise via 'claude --resume' d'une session ended ne fonctionne pas de façon fiable.
+      const canContinue = (statusKey === 'idle' && !!s.tmux_target);
       return `
         <tr class="${isHi ? 'flash' : ''}" data-session="${escapeHtml(s.session_id)}">
           <td data-label="Statut"><span class="status ${statusKey}">${STATUS_LABELS[statusKey] || statusKey}</span></td>
