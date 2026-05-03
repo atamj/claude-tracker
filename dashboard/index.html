@@ -271,7 +271,7 @@
     display: block;
   }
 
-  /* Bouton delete */
+  /* Boutons d'action sur les lignes */
   .row-actions { display: flex; gap: 6px; align-items: center; }
   .icon-btn {
     background: transparent;
@@ -284,6 +284,27 @@
     transition: all 0.1s;
   }
   .icon-btn:hover { background: var(--danger); color: white; border-color: var(--danger); }
+  .icon-btn.continue:hover { background: var(--accent); border-color: var(--accent); }
+
+  /* Bouton dismiss sur la card waiting (en haut à droite) */
+  .wait-card { position: relative; }
+  .card-dismiss {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0;
+    transition: all 0.1s;
+  }
+  .card-dismiss:hover { background: var(--border); color: var(--text); }
 
   /* Modal */
   .modal-backdrop {
@@ -746,6 +767,7 @@
 
       return `
         <div class="wait-card ${isHi ? 'flash' : ''}" data-session="${escapeHtml(s.session_id)}" data-kind="${kind}">
+          ${kind === 'idle' ? `<button class="card-dismiss" data-dismiss="${escapeHtml(s.session_id)}" title="Fermer (Claude attend juste un prompt)">×</button>` : ''}
           <div class="wait-head">
             <div style="flex: 1; min-width: 0;">
               <div class="wait-project">${escapeHtml(s.project_name || '?')}</div>
@@ -822,6 +844,14 @@
       });
     });
 
+    // Bind boutons dismiss
+    wrap.querySelectorAll('[data-dismiss]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dismissWaiting(btn.dataset.dismiss);
+      });
+    });
+
     // Auto-scroll de la vue terminale vers le bas, déclenché à l'ouverture de l'accordéon
     wrap.querySelectorAll('details.term-accordion').forEach(d => {
       d.addEventListener('toggle', () => {
@@ -863,6 +893,7 @@
       const title = projectTitle(s);
       const subtitle = rowSubtitle(s);
       const canDelete = (statusKey === 'ended' || statusKey === 'idle');
+      const canContinue = (statusKey === 'ended' || statusKey === 'idle');
       return `
         <tr class="${isHi ? 'flash' : ''}" data-session="${escapeHtml(s.session_id)}">
           <td data-label="Statut"><span class="status ${statusKey}">${STATUS_LABELS[statusKey] || statusKey}</span></td>
@@ -876,6 +907,7 @@
           <td data-label="Activité">
             <div class="row-actions">
               <span class="muted">${timeAgo(s.last_activity)}</span>
+              ${canContinue ? `<button class="icon-btn continue" data-continue="${escapeHtml(s.session_id)}" title="Reprendre la conversation">✎</button>` : ''}
               ${canDelete ? `<button class="icon-btn" data-delete="${escapeHtml(s.session_id)}" title="Supprimer">✕</button>` : ''}
             </div>
           </td>
@@ -890,6 +922,12 @@
       el.addEventListener('click', (ev) => {
         ev.stopPropagation();
         deleteSession(el.dataset.delete);
+      });
+    });
+    tbody.querySelectorAll('[data-continue]').forEach(el => {
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        continueSession(el.dataset.continue);
       });
     });
   }
@@ -907,6 +945,46 @@
       fetchSessions();
     } catch (e) {
       showToast('Erreur réseau', 'error');
+    }
+  }
+
+  async function dismissWaiting(sessionId) {
+    try {
+      const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/dismiss`, { method: 'POST' });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        showToast(data.detail || 'Échec', 'error');
+        return;
+      }
+      fetchSessions();
+    } catch (e) {
+      showToast('Erreur réseau', 'error');
+    }
+  }
+
+  async function continueSession(sessionId) {
+    const text = prompt("Message à envoyer à Claude :", "");
+    if (!text || !text.trim()) return;
+    showToast("Envoi en cours…", "");
+    try {
+      const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/continue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        showToast(data.detail || "Échec", "error");
+        return;
+      }
+      if (data.mode === 'live') {
+        showToast("Message envoyé", "ok");
+      } else {
+        showToast(`Session reprise${data.ready ? '' : ' (peut prendre quelques secondes)'}`, "ok");
+      }
+      fetchSessions();
+    } catch (e) {
+      showToast("Erreur réseau", "error");
     }
   }
 

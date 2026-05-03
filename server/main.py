@@ -1,7 +1,9 @@
 import asyncio
 import json
 import os
+import re
 import shutil
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -610,6 +612,114 @@ async def session_transcript(session_id: str, limit: int = 200) -> dict:
         messages = messages[-limit:]
     n_alt = sum(1 for m in messages if m.get("branch") == "alt")
     return {"messages": messages, "transcript_path": str(p), "alt_count": n_alt}
+
+
+@app.post("/api/sessions/{session_id}/dismiss")
+async def dismiss_session(session_id: str) -> JSONResponse:
+    """Efface l'état 'en attente' d'une session sans rien envoyer.
+    Utilisé pour fermer une card waiting de type 'idle' (Claude attend juste un prompt)."""
+    ts = now_iso()
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE sessions SET status='idle', last_question=NULL, terminal_view=NULL, "
+            "last_activity=? WHERE session_id=? AND status='waiting'",
+            (ts, session_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(404, "session introuvable ou pas en attente")
+    await broadcaster.publish({"type": "dismiss", "session_id": session_id, "at": ts})
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/sessions/{session_id}/continue")
+async def continue_session(session_id: str, request: Request) -> JSONResponse:
+    """Continue une conversation depuis la table.
+    - Session active (tmux vivant) → on send-keys directement.
+    - Session ended → on relance via 'claude --resume' dans une nouvelle tmux session,
+      on attend que Claude soit prêt, puis on envoie le texte."""
+    body = await request.json()
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "texte requis")
+
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT cwd, status, tmux_target FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "session inconnue")
+
+    # Session vivante avec un tmux target → send-keys direct
+    alive = await _get_alive_tmux_targets()
+    if row["tmux_target"] and alive is not None and row["tmux_target"] in alive:
+        rc, err = await tmux_send(row["tmux_target"], text, press_enter=True)
+        if rc != 0:
+            raise HTTPException(500, f"send-keys échoué: {err.strip()}")
+        ts = now_iso()
+        with get_conn() as conn:
+            conn.execute(
+                "UPDATE sessions SET status='running', last_question=NULL, terminal_view=NULL, "
+                "last_activity=? WHERE session_id=?",
+                (ts, session_id),
+            )
+        await broadcaster.publish({"type": "continue", "session_id": session_id, "at": ts})
+        return JSONResponse({"ok": True, "mode": "live"})
+
+    # Session morte → on resume via une nouvelle tmux session
+    cwd = row["cwd"]
+    if not cwd or not Path(cwd).exists():
+        raise HTTPException(400, f"dossier de la session introuvable ({cwd})")
+
+    tmux_bin = shutil.which("tmux")
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        # Fallback : path standard (le PATH peut ne pas inclure ~/.local/bin pour le service)
+        guess = Path.home() / ".local" / "bin" / "claude"
+        if guess.exists():
+            claude_bin = str(guess)
+    if not tmux_bin or not claude_bin:
+        raise HTTPException(500, f"tmux ou claude introuvable (tmux={tmux_bin}, claude={claude_bin})")
+
+    safe = re.sub(r"[^a-zA-Z0-9_-]", "_", os.path.basename(cwd.rstrip("/")) or "claude")
+    new_tmux = f"claude-resume-{safe}-{int(time.time())}"
+
+    # Lance détaché : tmux new-session -d ... claude --resume <id>
+    proc = await asyncio.create_subprocess_exec(
+        tmux_bin, "new-session", "-d",
+        "-s", new_tmux,
+        "-c", cwd,
+        "-e", f"CLAUDE_TRACKER_TMUX_TARGET={new_tmux}",
+        "--",
+        claude_bin, "--resume", session_id,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    out, err = await proc.communicate()
+    if proc.returncode != 0:
+        raise HTTPException(500, f"tmux new-session échoué: {err.decode('utf-8', 'replace')}")
+
+    # Attend que Claude soit prêt en surveillant la pane (max ~12s)
+    ready = False
+    for _ in range(24):
+        await asyncio.sleep(0.5)
+        view = await tmux_capture(new_tmux, lines=30) or ""
+        # On cherche un signal "input ready" : le caret ❯ ou un séparateur typique
+        if "❯" in view or "Try \"" in view or "shortcuts" in view:
+            ready = True
+            break
+
+    # Envoie le texte (même si pas tout à fait prêt, ça partira dans le buffer)
+    rc, send_err = await tmux_send(new_tmux, text, press_enter=True)
+    if rc != 0:
+        raise HTTPException(500, f"send-keys après resume échoué: {send_err.strip()}")
+
+    return JSONResponse({
+        "ok": True,
+        "mode": "resumed",
+        "tmux_session": new_tmux,
+        "ready": ready,
+    })
 
 
 @app.delete("/api/sessions/{session_id}")
