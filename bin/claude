@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Wrapper claude → lance Claude Code dans tmux pour pilotage à distance
+# depuis le dashboard Claude Tracker.
+#
+# Comportement :
+#  - Hors tmux : crée une session tmux dédiée et l'attache.
+#  - Déjà dans tmux : lance directement, en tagant le pane courant.
+#  - Si le binaire n'est pas là, fallback vers le claude système.
+
+set -e
+
+REAL_CLAUDE="${HOME}/.local/bin/claude"
+if [ ! -x "$REAL_CLAUDE" ]; then
+    REAL_CLAUDE="$(PATH="${PATH#${HOME}/claude-tracker/bin:}" command -v claude || true)"
+fi
+if [ -z "$REAL_CLAUDE" ]; then
+    echo "claude binary not found" >&2
+    exit 1
+fi
+
+# Si tmux pas dispo, fallback transparent (dégradé : pas de pilotage à distance)
+if ! command -v tmux >/dev/null 2>&1; then
+    exec "$REAL_CLAUDE" "$@"
+fi
+
+if [ -n "${TMUX:-}" ]; then
+    # Déjà dans tmux : on tag le pane courant comme cible
+    PANE_ID="$(tmux display -p '#{pane_id}')"
+    export CLAUDE_TRACKER_TMUX_TARGET="$PANE_ID"
+    exec "$REAL_CLAUDE" "$@"
+fi
+
+# Crée une nouvelle session tmux dédiée
+PROJECT="$(basename "$PWD")"
+SAFE="$(echo "$PROJECT" | tr -c 'A-Za-z0-9_-' '_')"
+NAME="claude-${SAFE}-$$"
+
+exec tmux new-session -A -s "$NAME" \
+    -e "CLAUDE_TRACKER_TMUX_TARGET=$NAME" \
+    -- "$REAL_CLAUDE" "$@"

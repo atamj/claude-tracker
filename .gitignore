@@ -1,0 +1,31 @@
+# Données runtime
+data/
+logs/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Credentials et clés (CRITIQUE — ne jamais commit)
+server/vapid_keys.json
+server/vapid_private.pem
+*.pem
+*.key
+
+# Sauvegardes
+*.bak
+*.bak.*
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/

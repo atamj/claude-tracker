@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Lance Claude Code en mode --dangerously-skip-permissions via le wrapper tracker.
+# Garantit le routing par tmux + tracking dashboard, peu importe le contexte d'appel
+# (alias non expandé, script non-interactif, etc.).
+exec "$(dirname "$0")/claude" --dangerously-skip-permissions "$@"
