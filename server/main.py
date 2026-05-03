@@ -684,14 +684,16 @@ async def continue_session(session_id: str, request: Request) -> JSONResponse:
     safe = re.sub(r"[^a-zA-Z0-9_-]", "_", os.path.basename(cwd.rstrip("/")) or "claude")
     new_tmux = f"claude-resume-{safe}-{int(time.time())}"
 
-    # Lance détaché : tmux new-session -d ... claude --resume <id>
+    # Lance détaché : tmux new-session -d ... claude --resume <id> --fork-session
+    # --fork-session crée un nouveau session_id basé sur l'ancien, évite les conflits
+    # de lock si l'original est déjà ouvert ailleurs.
     proc = await asyncio.create_subprocess_exec(
         tmux_bin, "new-session", "-d",
         "-s", new_tmux,
         "-c", cwd,
         "-e", f"CLAUDE_TRACKER_TMUX_TARGET={new_tmux}",
         "--",
-        claude_bin, "--resume", session_id,
+        claude_bin, "--resume", session_id, "--fork-session",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
