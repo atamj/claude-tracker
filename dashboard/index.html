@@ -679,18 +679,29 @@
     return words.length > maxChars ? words.slice(0, maxChars).trimEnd() + '…' : words;
   }
 
-  // Pour la card "en attente" (déjà bien : projet + first_prompt en sous-titre)
+  // Pour la card "en attente" : ai_title si dispo (court et parlant), sinon first_prompt
   function makeTitle(s) {
+    if (s.ai_title) return s.ai_title;
     if (s.first_prompt && s.first_prompt.trim()) return s.first_prompt.trim();
     return s.project_name || '?';
   }
 
-  // Pour la table : nom du projet d'abord, sinon résumé du first_prompt
+  // Pour la table — titre principal (projet OU ai_title pour les dossiers génériques)
   function projectTitle(s) {
     const name = s.project_name || '';
     if (!isGenericDir(name)) return name;
+    if (s.ai_title) return s.ai_title;
     const fromPrompt = shortFromPrompt(s.first_prompt);
     return fromPrompt || name || '?';
+  }
+
+  // Sous-titre de la table : ai_title si on a affiché le projet, sinon last_prompt
+  function rowSubtitle(s) {
+    const title = projectTitle(s);
+    // Cas 1 : titre = nom de projet, on ajoute ai_title en sous-titre s'il existe
+    if (s.ai_title && title !== s.ai_title) return s.ai_title;
+    // Cas 2 : titre = ai_title (ou autre fallback) → last_prompt pour différencier
+    return shortFromPrompt(s.last_prompt, 14, 100);
   }
 
   function renderWaiting(list) {
@@ -814,8 +825,7 @@
       const statusKey = s.status || 'idle';
       const isHi = highlightId && s.session_id === highlightId;
       const title = projectTitle(s);
-      // Sous-titre : dernier prompt pour différencier deux sessions sur le même projet
-      const subtitle = shortFromPrompt(s.last_prompt, 14, 100);
+      const subtitle = rowSubtitle(s);
       const canDelete = (statusKey === 'ended' || statusKey === 'idle');
       return `
         <tr class="${isHi ? 'flash' : ''}" data-session="${escapeHtml(s.session_id)}">

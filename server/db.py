@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     tmux_target   TEXT,
     last_question TEXT,
     terminal_view TEXT,
-    first_prompt  TEXT
+    first_prompt  TEXT,
+    ai_title      TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -49,6 +50,7 @@ MIGRATIONS = [
     "ALTER TABLE sessions ADD COLUMN last_question TEXT",
     "ALTER TABLE sessions ADD COLUMN terminal_view TEXT",
     "ALTER TABLE sessions ADD COLUMN first_prompt TEXT",
+    "ALTER TABLE sessions ADD COLUMN ai_title TEXT",
 ]
 
 

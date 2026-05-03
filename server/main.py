@@ -276,6 +276,57 @@ async def _get_alive_tmux_targets() -> set[str] | None:
     return alive
 
 
+def _extract_ai_title(transcript_path: str | None) -> str | None:
+    """Extrait le dernier aiTitle d'un transcript Claude Code JSONL.
+    Le titre est régénéré périodiquement par Claude — on garde le plus récent."""
+    if not transcript_path:
+        return None
+    p = Path(transcript_path)
+    if not p.exists():
+        return None
+    last_title = None
+    try:
+        with p.open("r", encoding="utf-8") as f:
+            for line in f:
+                if '"ai-title"' not in line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except Exception:
+                    continue
+                if d.get("type") == "ai-title" and d.get("aiTitle"):
+                    last_title = d["aiTitle"]
+    except Exception:
+        return None
+    return last_title
+
+
+async def _refresh_ai_titles() -> int:
+    """Pour chaque session non-ended avec un transcript, recharge le aiTitle si présent.
+    Renvoie le nombre de sessions mises à jour."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT session_id, transcript, ai_title FROM sessions "
+            "WHERE status != 'ended' AND transcript IS NOT NULL AND transcript != ''"
+        ).fetchall()
+    if not rows:
+        return 0
+    loop = asyncio.get_event_loop()
+    titles = await asyncio.gather(*[
+        loop.run_in_executor(None, _extract_ai_title, r["transcript"]) for r in rows
+    ])
+    updated = 0
+    with get_conn() as conn:
+        for r, new_title in zip(rows, titles):
+            if new_title and new_title != r["ai_title"]:
+                conn.execute(
+                    "UPDATE sessions SET ai_title = ? WHERE session_id = ?",
+                    (new_title, r["session_id"]),
+                )
+                updated += 1
+    return updated
+
+
 async def _reap_zombie_sessions() -> int:
     """Marque ended les sessions dont la cible tmux n'existe plus.
     Renvoie le nombre de sessions marquées."""
@@ -304,13 +355,15 @@ async def _reap_zombie_sessions() -> int:
 async def list_sessions(limit: int = 100) -> dict:
     # Détection automatique des sessions zombies (terminal fermé brutalement)
     await _reap_zombie_sessions()
+    # Récupère le titre IA généré par Claude Code (à partir du transcript)
+    await _refresh_ai_titles()
     with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT session_id, cwd, project_name, started_at, ended_at,
                    last_activity, status, last_prompt, prompt_count,
                    tmux_target, last_question, terminal_view, first_prompt,
-                   transcript
+                   ai_title, transcript
             FROM sessions
             ORDER BY
               CASE status WHEN 'waiting' THEN 0 WHEN 'running' THEN 1 WHEN 'idle' THEN 2 ELSE 3 END,
