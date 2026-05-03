@@ -249,8 +249,61 @@ async def receive_hook(event: str, request: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
+async def _get_alive_tmux_targets() -> set[str] | None:
+    """Liste les sessions et panes tmux vivants. None si tmux indisponible."""
+    if not shutil.which("tmux"):
+        return None  # pas de tmux → on ne reap rien (sécurité)
+    alive: set[str] = set()
+    for args in (
+        ["tmux", "ls", "-F", "#{session_name}"],
+        ["tmux", "list-panes", "-a", "-F", "#{pane_id}"],
+    ):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=2.0)
+            # tmux ls renvoie 1 si aucun serveur — c'est OK, on continue
+            if proc.returncode in (0, 1):
+                for line in out.decode().splitlines():
+                    line = line.strip()
+                    if line:
+                        alive.add(line)
+        except (asyncio.TimeoutError, FileNotFoundError):
+            return None
+    return alive
+
+
+async def _reap_zombie_sessions() -> int:
+    """Marque ended les sessions dont la cible tmux n'existe plus.
+    Renvoie le nombre de sessions marquées."""
+    alive = await _get_alive_tmux_targets()
+    if alive is None:
+        return 0  # tmux down → on ne touche à rien
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT session_id, tmux_target FROM sessions "
+            "WHERE status != 'ended' AND tmux_target IS NOT NULL AND tmux_target != ''"
+        ).fetchall()
+        zombies = [r["session_id"] for r in rows if r["tmux_target"] not in alive]
+        if not zombies:
+            return 0
+        ts = now_iso()
+        placeholders = ",".join("?" * len(zombies))
+        conn.execute(
+            f"UPDATE sessions SET status='ended', ended_at=?, last_activity=?, "
+            f"last_question=NULL, terminal_view=NULL WHERE session_id IN ({placeholders})",
+            [ts, ts] + zombies,
+        )
+    return len(zombies)
+
+
 @app.get("/api/sessions")
 async def list_sessions(limit: int = 100) -> dict:
+    # Détection automatique des sessions zombies (terminal fermé brutalement)
+    await _reap_zombie_sessions()
     with get_conn() as conn:
         rows = conn.execute(
             """
