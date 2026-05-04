@@ -58,15 +58,20 @@ Une fois fini, **ouvre un nouveau terminal** (pour recharger le PATH), lance `cl
 Pour accéder au dashboard depuis ton téléphone et recevoir des notifications push, tu as besoin de **Tailscale** (ou équivalent : Cloudflare Tunnel, ngrok, ZeroTier…).
 
 1. **Installe Tailscale** sur ton ordi : https://tailscale.com/download/linux
-2. **Connecte-toi** : `sudo tailscale up`
-3. **Active MagicDNS + HTTPS Certs** dans la console : https://login.tailscale.com/admin/dns
-4. **Expose le dashboard en HTTPS** :
+2. **Active le daemon au boot** (sinon le tunnel disparaît à chaque redémarrage) :
+   ```
+   sudo systemctl enable --now tailscaled
+   ```
+3. **Connecte-toi** : `sudo tailscale up`
+4. **Active MagicDNS + HTTPS Certs** dans la console : https://login.tailscale.com/admin/dns
+5. **Expose le dashboard en HTTPS** :
    ```
    sudo tailscale serve --bg --https=443 http://localhost:8765
    ```
-5. **Sur ton tel** : installe l'app Tailscale, login avec le même compte, ouvre Chrome sur `https://<nom-de-ta-machine>.<tailnet>.ts.net`
-6. **Installe la PWA** : menu Chrome → "Installer l'application"
-7. **Active les notifs** : ouvre la PWA, clique sur le bouton 🔕 en haut → autorise → tu reçois une notif de test
+   La config est persistée — pas besoin de la relancer après un reboot tant que `tailscaled` démarre automatiquement.
+6. **Sur ton tel** : installe l'app Tailscale, login avec le même compte, ouvre Chrome sur `https://<nom-de-ta-machine>.<tailnet>.ts.net`
+7. **Installe la PWA** : menu Chrome → "Installer l'application"
+8. **Active les notifs** : ouvre la PWA, clique sur le bouton 🔕 en haut → autorise → tu reçois une notif de test
 
 Les Web Push exigent **HTTPS** : sans Tailscale (ou autre tunnel TLS), le bouton Activer ne fonctionnera pas.
 
