@@ -910,7 +910,7 @@
           <td data-label="Activité">
             <div class="row-actions">
               <span class="muted">${timeAgo(s.last_activity)}</span>
-              ${statusKey === 'ended' && s.cwd ? `<button class="icon-btn copy" data-copy-resume="${escapeHtml(s.session_id)}" data-cwd="${escapeHtml(s.cwd)}" title="Copier la commande de reprise">📋</button>` : ''}
+              ${s.cwd ? `<button class="icon-btn copy" data-copy-resume="${escapeHtml(s.session_id)}" data-cwd="${escapeHtml(s.cwd)}" title="Copier la commande de reprise">📋</button>` : ''}
               ${canContinue ? `<button class="icon-btn continue" data-continue="${escapeHtml(s.session_id)}" title="Reprendre la conversation">✎</button>` : ''}
               ${canDelete ? `<button class="icon-btn" data-delete="${escapeHtml(s.session_id)}" title="Supprimer">✕</button>` : ''}
             </div>
