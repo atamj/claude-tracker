@@ -285,6 +285,7 @@
   }
   .icon-btn:hover { background: var(--danger); color: white; border-color: var(--danger); }
   .icon-btn.continue:hover { background: var(--accent); border-color: var(--accent); }
+  .icon-btn.copy:hover { background: var(--running); color: white; border-color: var(--running); }
 
   /* Bouton dismiss sur la card waiting (en haut à droite) */
   .wait-card { position: relative; }
@@ -909,6 +910,7 @@
           <td data-label="Activité">
             <div class="row-actions">
               <span class="muted">${timeAgo(s.last_activity)}</span>
+              ${statusKey === 'ended' && s.cwd ? `<button class="icon-btn copy" data-copy-resume="${escapeHtml(s.session_id)}" data-cwd="${escapeHtml(s.cwd)}" title="Copier la commande de reprise">📋</button>` : ''}
               ${canContinue ? `<button class="icon-btn continue" data-continue="${escapeHtml(s.session_id)}" title="Reprendre la conversation">✎</button>` : ''}
               ${canDelete ? `<button class="icon-btn" data-delete="${escapeHtml(s.session_id)}" title="Supprimer">✕</button>` : ''}
             </div>
@@ -930,6 +932,12 @@
       el.addEventListener('click', (ev) => {
         ev.stopPropagation();
         continueSession(el.dataset.continue);
+      });
+    });
+    tbody.querySelectorAll('[data-copy-resume]').forEach(el => {
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        copyResumeCommand(el.dataset.copyResume, el.dataset.cwd);
       });
     });
   }
@@ -961,6 +969,21 @@
       fetchSessions();
     } catch (e) {
       showToast('Erreur réseau', 'error');
+    }
+  }
+
+  async function copyResumeCommand(sessionId, cwd) {
+    if (!cwd) {
+      showToast("Dossier inconnu pour cette session", "error");
+      return;
+    }
+    const cmd = `cd ${cwd} && claude --resume ${sessionId}`;
+    try {
+      await navigator.clipboard.writeText(cmd);
+      showToast("Commande de reprise copiée", "ok");
+    } catch (e) {
+      // Fallback : afficher la commande dans un prompt pour copie manuelle
+      prompt("Copie cette commande dans un terminal :", cmd);
     }
   }
 
